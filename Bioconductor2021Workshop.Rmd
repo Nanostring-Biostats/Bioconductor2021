@@ -1,1 +1,263 @@
-# Syllabus
+---
+title: "Introduction to the NanoStringRCCSet and GeomxSet Classes"
+author: "David Henderson, Patrick Aboyoun, Nicole Ortogero, Zhi Yang, Jason Reeves, Kara Gorman, Rona Vitancol, Thomas Smith"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Introduction to the NanoStringRCCSet Class}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 5,
+  fig.height = 4,
+  dpi=200
+)
+```
+
+## NanoStringNCTools
+
+The NanoStringRCCSet was inherited from Biobase's ExpressionSet class. The NanoStringRCCSet class was designed to encapsulate data and corresponding methods for Nanostring RCC files generated from the NanoString nCounter platform.
+
+
+## Loading Packages
+
+Loading the NanoStringNCTools package allows users access to the NanoStringRCCSet class.
+
+```{r, message=FALSE, warning=FALSE}
+library(NanoStringNCTools)
+```
+
+Load additional packages for vignette plotting.
+
+```{r, message=FALSE, warning=FALSE}
+library(ggthemes)
+library(ggiraph)
+```
+
+
+## Building a NanoStringRCCSet from .RCC files 
+
+```{r}
+datadir <- system.file("extdata", "3D_Bio_Example_Data",
+                       package = "NanoStringNCTools")
+rcc_files <- dir(datadir, pattern = "SKMEL.*\\.RCC$", full.names = TRUE)
+rlf_file <- file.path(datadir, "3D_SolidTumor_Sig.rlf")
+sample_annotation <- file.path(datadir, "3D_SolidTumor_PhenoData.csv")
+demoData <- readNanoStringRccSet(rcc_files, rlfFile = rlf_file, 
+                                 phenoDataFile = sample_annotation)
+class( demoData )
+isS4( demoData )
+is( demoData, "ExpressionSet" )
+demoData
+```
+
+
+## Accessing and Assigning NanoStringRCCSet Data Members
+
+Alongside the accessors associated with the ExpressionSet class, NanoStringRCCSet objects have unique additional assignment and accessor methods faciliting common ways to view nCounter data and associated labels.
+
+```{r}
+head( pData( demoData ), 2 )
+protocolData( demoData )
+svarLabels( demoData )
+head( sData(demoData), 2 )
+```
+
+Design information can be assigned to the NanoStringRCCSet object, as well as feature and sample labels to use for NanoStringRCCSet plotting methods.
+
+```{r}
+design( demoData ) <- ~ `Treatment`
+design( demoData )
+dimLabels( demoData )
+protocolData(demoData)[["Sample ID"]] <- sampleNames(demoData)
+dimLabels( demoData )[2] <- "Sample ID"
+dimLabels( demoData )
+```
+
+
+## Summarizing NanoString nCounter Data
+
+Easily summarize count results using the summary method. Data summaries can be generated across features or samples. Labels can be used to generate summaries based on feature or sample groupings.
+
+```{r}
+head( summary( demoData , MARGIN = 1 ), 2 )
+head( summary( demoData , MARGIN = 2 ), 2 )
+unique( sData( demoData )$"Treatment" )
+head( summary( demoData , MARGIN = 2, GROUP = "Treatment" )$VEM, 2 )
+head( summary( demoData , MARGIN = 2, GROUP = "Treatment" )$"DMSO", 2 )
+head( summary( demoData , MARGIN = 2, GROUP = "Treatment", log2 = FALSE )$"DMSO", 2 )
+```
+
+
+## Subsetting NanoStringRCCSet Objects
+
+Common subsetting methods including those to separate endogenous features from controls are provided with NanoStringRCCSet objects. In addition, users can use the subset or select arguments to further subset by feature or sample, respectively.
+
+```{r}
+length( sampleNames( demoData ) )
+length( sampleNames( subset( demoData , 
+                             select = phenoData( demoData )[["Treatment"]] == "VEM" ) ) )
+dim( exprs( demoData ) )
+dim( exprs( endogenousSubset( demoData, 
+                              select = phenoData( demoData )[["Treatment"]] == "VEM" ) ) )
+with( housekeepingSubset( demoData ) , table( CodeClass ) )
+with( negativeControlSubset( demoData ) , table( CodeClass ) )
+with( positiveControlSubset( demoData ) , table( CodeClass ) )
+with( controlSubset( demoData ) , table( CodeClass ) )
+with( nonControlSubset( demoData ) , table( CodeClass ) )
+```
+
+
+## Apply Functions Across Assay Data
+
+Similar to the ExpressionSet's esApply function, an equivalent method is available with NanoStringRCCSet objects. Functions can be applied to assay data feature- or sample-wise.
+
+```{r}
+assayDataElement( demoData, "demoElem" ) <- 
+  assayDataApply( demoData, MARGIN=2, FUN=log, base=10, elt="exprs" )
+assayDataElement( demoData, "demoElem" )[1:3, 1:2]
+assayDataApply( demoData, MARGIN=1, FUN=mean, elt="demoElem")[1:5]
+head( esBy( demoData, 
+            GROUP = "Treatment", 
+            FUN = function( x ) { 
+              assayDataApply( x, MARGIN = 1, FUN=mean, elt="demoElem" ) 
+            } ) )
+```
+
+There is also a preloaded nCounter normalization method that comes with the NanoStringRCCSet class. This includes the default normalization performed in nSolver.
+
+```{r}
+demoData <- normalize( demoData , type="nSolver", fromELT = "exprs" , toELT = "exprs_norm" )
+assayDataElement( demoData , elt = "exprs_norm" )[1:3, 1:2]
+```
+
+
+## Transforming NanoStringRCCSet Data to Data Frames
+
+The NanoStringRCCSet munge function helps users generate data frames for downstream modeling and visualization. There is also a transform method, which functions similarly to the base transform function.
+
+```{r}
+neg_set <- negativeControlSubset( demoData )
+class( neg_set )
+neg_ctrls <- munge( neg_set )
+head( neg_ctrls, 2 )
+class( neg_ctrls )
+head( munge( demoData ), 2 )
+munge( demoData, mapping = ~`BRAFGenotype` + GeneMatrix )
+exprs_df <- transform( assayData( demoData )[["exprs_norm"]] )
+class( exprs_df )
+exprs_df[1:3, 1:2]
+```
+
+
+## Built-in Quality Control Assessment
+
+Users can flag samples that fail QC thresholds or have borderline results based on housekeeper and ERCC expression, imaging quality, and binding density. Additionally, QC results can be visualized using the NanoStringRCCSet autoplot method.
+
+```{r, fig.cap="Housekeeping Genes QC Plot"}
+demoData <- setQCFlags( demoData )
+tail( svarLabels( demoData ) )
+head( protocolData( demoData )[["QCFlags"]], 2 )
+head( protocolData( demoData )[["QCBorderlineFlags"]], 2 )
+```
+
+Binding Density QC
+```{r}
+theme_set( theme_gray( base_family = "Arial" ) )
+girafe( ggobj = autoplot( demoData , "bindingDensity-mean" ) )
+girafe( ggobj = autoplot( demoData , "bindingDensity-sd" ) )
+```
+
+QC by Lane
+```{r}
+girafe( ggobj = autoplot( demoData , "lane-bindingDensity" ) )
+girafe( ggobj = autoplot( demoData , "lane-fov" ) )
+```
+
+Housekeeping Genes QC
+```{r}
+subData <- subset( demoData, select = phenoData( demoData )[["Treatment"]] == "DMSO" )
+girafe( ggobj = autoplot( subData, "housekeep-geom" ) )
+```
+
+ERCC QC
+```{r}
+girafe( ggobj = autoplot( demoData , "ercc-linearity" ) )
+girafe( ggobj = autoplot( subData , "ercc-lod" ) )
+```
+
+## Data exploration
+
+Further data exploration can be performed by visualizing a select feature's expression or by getting a bird's eye view with expression heatmaps auto-generated with unsupervised clustering dendrograms.
+
+```{r}
+girafe( ggobj = autoplot( demoData , "boxplot-feature" , index = featureNames(demoData)[3] , elt = "exprs" ) )
+autoplot( demoData , "heatmap-genes" , elt = "exprs_norm" )
+```
+## GeomxTools
+
+The NanoStringGeomxSet was inherited from Biobase's ExpressionSet class. The NanoStringGeomxSet class was designed to encapsulate data and corresponding methods for NanoString DCC files generated from the NanoString GeoMx 
+Digital Spatial Profiling (DSP) platform.
+
+
+## Loading Packages
+
+Loading the NanoStringNCTools and GeomxTools packages allow users access to the GeomxSet class and corresponding methods.
+
+```{r, message=FALSE, warning=FALSE}
+library(NanoStringNCTools)
+library(GeomxTools)
+```
+
+## Building a NanoStringGeomxSet from .DCC files 
+
+```{r}
+datadir <- system.file("extdata", "DSP_NGS_Example_Data",
+                       package="GeomxTools")
+DCCFiles <- dir(datadir, pattern=".dcc$", full.names=TRUE)
+PKCFiles <- unzip(zipfile = file.path(datadir,  "/pkcs.zip"))
+SampleAnnotationFile <- file.path(datadir, "annotations.xlsx")
+demoData <-
+  suppressWarnings(readNanoStringGeomxSet(dccFiles = DCCFiles,
+                                          pkcFiles = PKCFiles,
+                                          phenoDataFile = SampleAnnotationFile,
+                                          phenoDataSheet = "CW005",
+                                          phenoDataDccColName = "Sample_ID",
+                                          protocolDataColNames = c("aoi",
+                                                                   "cell_line",
+                                                                   "roi_rep",
+                                                                   "pool_rep",
+                                                                   "slide_rep"),
+                                          experimentDataColNames = c("panel")))
+class( demoData )
+isS4( demoData )
+is( demoData, "ExpressionSet" )
+demoData
+```
+
+
+## Accessing and Assigning NanoStringGeomxSet Data Members
+
+Alongside the accessors associated with the ExpressionSet class, NanoStringGeomxSet objects have unique additional assignment and accessor methods faciliting common ways to view DSP data and associated labels.
+
+```{r}
+head( pData( demoData ), 2 )
+protocolData( demoData )
+svarLabels( demoData )
+head( sData(demoData), 2 )
+```
+
+Design information can be assigned to the NanoStringGeomxSet object, as well as feature and sample labels to use for NanoStringGeomxSet plotting methods.
+
+```{r}
+design( demoData ) <- ~ `segments`
+design( demoData )
+dimLabels( demoData )
+dimLabels( demoData )[2] <- "Sample ID"
+dimLabels( demoData )
+```
